@@ -23,8 +23,10 @@
             "pr": 31177,
             "title": "Add iceberg.domain-compaction-threshold config",
             "ref": "origin/pedroluislopez/iceberg-domain-compaction-threshold",
-            "comment": "Does not cherry-pick cleanly onto 483: IcebergPageSourceProvider gained a memoryContext parameter after the release. Resolve once onto a port branch and record it below.",
-            "ports": {}
+            "comment": "Does not cherry-pick cleanly onto 483: IcebergPageSourceProvider gained a memoryContext parameter after the release.",
+            "ports": {
+                "483": "origin/pedroluislopez/iceberg-domain-compaction-threshold-483"
+            }
         }
     ],
 
@@ -33,8 +35,17 @@
         "plugin/trino-iceberg"
     ],
 
+    "comment_extraModules": "Modules Trino does not publish to Maven Central that the plugins above need, mostly through their test scope. Union over every plugin in the build; discover additions from the 'Could not find artifact io.trino:...' errors a new release brings.",
     "extraModules": [
-        "plugin/trino-jmx"
+        "plugin/trino-jmx",
+        "plugin/trino-blackhole",
+        "plugin/trino-geospatial",
+        "plugin/trino-hive",
+        "lib/trino-filesystem",
+        "lib/trino-hdfs",
+        "lib/trino-parquet",
+        "lib/trino-geospatial-epsg",
+        "lib/trino-geospatial-epsg-generator"
     ],
 
     "testArgs": {

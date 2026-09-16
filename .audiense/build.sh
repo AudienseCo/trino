@@ -72,8 +72,12 @@ git -C "${REPO_ROOT}" fetch --quiet upstream-releases "refs/tags/${BASE_TAG}:ref
 
 echo "==> Preparing a clean worktree at ${SRC_DIR}"
 git -C "${REPO_ROOT}" worktree remove --force "${SRC_DIR}" 2>/dev/null || true
-git -C "${REPO_ROOT}" branch -D "${WORK_BRANCH}" 2>/dev/null || true
 rm -rf "${BUILD_DIR}"
+# A worktree directory removed by hand stays registered, and git then refuses to
+# delete the branch it had checked out. Runners with reusable capacity carry that
+# state over from the previous build.
+git -C "${REPO_ROOT}" worktree prune
+git -C "${REPO_ROOT}" branch -D "${WORK_BRANCH}" 2>/dev/null || true
 git -C "${REPO_ROOT}" worktree add --quiet -b "${WORK_BRANCH}" "${SRC_DIR}" "refs/tags/${BASE_TAG}"
 
 echo "==> Applying patches"
@@ -169,12 +173,18 @@ done
 
 # COPY merges, so a jar the official image ships and we no longer produce would
 # survive next to ours and put two versions of a library on the plugin classpath.
+#
+# Only the flat jars are ours. A plugin directory is assembled from more than the
+# connector artifact: core/trino-server/src/main/provisio/trino.xml also unpacks
+# trino-hdfs with its root into iceberg, hive and delta-lake, which is where the
+# nested hdfs/ classloader comes from. Those subdirectories belong to the release
+# and are meant to survive untouched.
 echo "==> Checking for jars the official image ships that this build does not"
 orphans=0
 for plugin in "${PLUGINS[@]}"; do
     name="$(basename "${plugin}")"; name="${name#trino-}"
-    official="$(docker run --rm --entrypoint sh "trinodb/trino:${BASE_TAG}" -c "ls /usr/lib/trino/plugin/${name}")"
-    left_behind="$(comm -23 <(echo "${official}" | sort) <(ls "${CONTEXT_DIR}/plugins/${name}" | sort))"
+    official="$(docker run --rm --entrypoint sh "trinodb/trino:${BASE_TAG}" -c "find /usr/lib/trino/plugin/${name} -maxdepth 1 -type f -printf '%f\\n'")"
+    left_behind="$(comm -23 <(echo "${official}" | sort) <(find "${CONTEXT_DIR}/plugins/${name}" -maxdepth 1 -type f -printf '%f\n' | sort))"
     if [ -n "${left_behind}" ]; then
         echo "    ${name} would keep stale jars:" >&2
         echo "${left_behind}" | sed 's/^/        /' >&2
