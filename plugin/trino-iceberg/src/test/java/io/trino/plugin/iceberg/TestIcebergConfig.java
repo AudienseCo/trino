@@ -92,7 +92,8 @@ public class TestIcebergConfig
                 .setBucketExecutionEnabled(true)
                 .setEqualityDeletesBlocksHashEnabled(true)
                 .setParquetFooterCacheType(NONE)
-                .setParquetFooterCacheMemoryMaxSize(DataSize.of(10, MEGABYTE)));
+                .setParquetFooterCacheMemoryMaxSize(DataSize.of(10, MEGABYTE))
+                .setDomainCompactionThreshold(1000));
     }
 
     @Test
@@ -143,6 +144,7 @@ public class TestIcebergConfig
                 .put("iceberg.equality-deletes-blocks-hash-enabled", "false")
                 .put("iceberg.parquet-footer-cache.type", "MEMORY")
                 .put("iceberg.parquet-footer-cache.memory.max-size", "42MB")
+                .put("iceberg.domain-compaction-threshold", "10000")
                 .buildOrThrow();
 
         IcebergConfig expected = new IcebergConfig()
@@ -190,7 +192,8 @@ public class TestIcebergConfig
                 .setBucketExecutionEnabled(false)
                 .setEqualityDeletesBlocksHashEnabled(false)
                 .setParquetFooterCacheType(MEMORY)
-                .setParquetFooterCacheMemoryMaxSize(DataSize.of(42, MEGABYTE));
+                .setParquetFooterCacheMemoryMaxSize(DataSize.of(42, MEGABYTE))
+                .setDomainCompactionThreshold(10000);
 
         assertFullMapping(properties, expected);
     }

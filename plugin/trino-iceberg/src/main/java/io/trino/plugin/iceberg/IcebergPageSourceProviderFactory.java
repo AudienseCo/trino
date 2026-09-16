@@ -42,6 +42,7 @@ public class IcebergPageSourceProviderFactory
     private final ParquetFooterCache parquetFooterCache;
     private final Optional<BlocksHashFactory> blocksHashFactory;
     private final EncryptionManagerFactory encryptionManagerFactory;
+    private final int domainCompactionThreshold;
 
     @Inject
     public IcebergPageSourceProviderFactory(
@@ -67,11 +68,12 @@ public class IcebergPageSourceProviderFactory
                 ? Optional.of(requireNonNull(blocksHashFactory, "blocksHashFactory is null"))
                 : Optional.empty();
         this.encryptionManagerFactory = requireNonNull(encryptionManagerFactory, "encryptionManagerFactory is null");
+        this.domainCompactionThreshold = config.getDomainCompactionThreshold();
     }
 
     @Override
     public IcebergPageSourceProvider createPageSourceProvider()
     {
-        return new IcebergPageSourceProvider(fileSystemFactory, fileIoFactory, fileFormatDataSourceStats, orcReaderOptions, parquetReaderOptions, typeManager, parquetFooterCache, blocksHashFactory, encryptionManagerFactory);
+        return new IcebergPageSourceProvider(fileSystemFactory, fileIoFactory, fileFormatDataSourceStats, orcReaderOptions, parquetReaderOptions, typeManager, parquetFooterCache, blocksHashFactory, encryptionManagerFactory, domainCompactionThreshold);
     }
 }

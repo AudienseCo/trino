@@ -13,6 +13,7 @@
  */
 package io.trino.plugin.iceberg;
 
+import io.trino.Session;
 import io.trino.testing.BaseOrcWithBloomFiltersTest;
 import io.trino.testing.QueryRunner;
 import io.trino.testing.sql.TestTable;
@@ -105,6 +106,35 @@ public class TestIcebergOrcWithBloomFilters
             assertQueryFails(
                     "ALTER TABLE " + table.getName() + " SET PROPERTIES orc_bloom_filter_columns = ARRAY['x']",
                     "Cannot specify orc_bloom_filter_columns table property for storage format: PARQUET");
+        }
+    }
+
+    @Test
+    void testBloomFilterPrunesRangePredicate()
+    {
+        // A range reaches the bloom filter only once it is expanded into its discrete values, which
+        // iceberg.domain-compaction-threshold bounds. orderkey in tpch.tiny.orders jumps from 7 to 32,
+        // so this range lies between the min and max of the data without matching a single row, and
+        // only the bloom filter can rule it out.
+        try (TestTable table = newTrinoTable(
+                "test_orc_bloom_filter_range",
+                "WITH (" + getTableProperties("orderkey", "orderstatus") + ") AS SELECT orderkey, orderstatus FROM tpch.tiny.orders")) {
+            String query = "SELECT * FROM " + table.getName() + " WHERE orderkey BETWEEN 8 AND 31";
+
+            Session bloomFiltersDisabled = Session.builder(getSession())
+                    .setCatalogSessionProperty(getSession().getCatalog().orElseThrow(), "orc_bloom_filters_enabled", "false")
+                    .build();
+            assertQueryStats(
+                    bloomFiltersDisabled,
+                    query,
+                    queryStats -> assertThat(queryStats.getPhysicalInputPositions()).isGreaterThan(0),
+                    results -> assertThat(results.getRowCount()).isEqualTo(0));
+
+            assertQueryStats(
+                    getSession(),
+                    query,
+                    queryStats -> assertThat(queryStats.getPhysicalInputPositions()).isEqualTo(0),
+                    results -> assertThat(results.getRowCount()).isEqualTo(0));
         }
     }
 

@@ -289,7 +289,8 @@ class TestIcebergPageSourceProvider
                 TESTING_TYPE_MANAGER,
                 ParquetFooterCache.noop(),
                 Optional.of(blocksHashFactory),
-                new DefaultEncryptionManagerFactory(new IcebergEncryptionConfig()));
+                new DefaultEncryptionManagerFactory(new IcebergEncryptionConfig()),
+                new IcebergConfig().getDomainCompactionThreshold());
     }
 
     private static class TestingParquetFooterCache
