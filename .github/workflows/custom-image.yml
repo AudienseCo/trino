@@ -59,15 +59,19 @@ jobs:
           distribution: 'temurin' # same JDK distribution as the official Trino images
           java-version: ${{ steps.release.outputs.java_version }}
 
-      - name: Assemble the build context
-        run: .audiense/build.sh -t '${{ steps.release.outputs.base_tag }}' ${{ inputs.skip_tests && '-x' || '' }}
-
+      # build.sh pulls the base image for the stale-jar check, so this has to
+      # come before it and not just before the image build.
       - name: Log in to ECR
         run: |
-          registry=$(jq -r '.image.repository' .audiense/custom-image.json | cut -d/ -f1)
-          region=$(echo "${registry}" | cut -d. -f4)
-          aws ecr get-login-password --region "${region}" \
-            | docker login --username AWS --password-stdin "${registry}"
+          registry=$(jq -r '.image.baseRepository, .image.repository' .audiense/custom-image.json | cut -d/ -f1 | sort -u | paste -sd' ')
+          for r in ${registry}; do
+            region=$(echo "${r}" | cut -d. -f4)
+            aws ecr get-login-password --region "${region}" \
+              | docker login --username AWS --password-stdin "${r}"
+          done
+
+      - name: Assemble the build context
+        run: .audiense/build.sh -t '${{ steps.release.outputs.base_tag }}' ${{ inputs.skip_tests && '-x' || '' }}
 
       - name: Build and push the image
         env:
@@ -75,6 +79,7 @@ jobs:
           PUSH: ${{ inputs.push }}
         run: |
           repository=$(jq -r '.image.repository' .audiense/custom-image.json)
+          base=$(jq -r '.image.baseRepository // "trinodb/trino"' .audiense/custom-image.json)
           suffix=$(jq -r '.image.tagSuffix' .audiense/custom-image.json)
           platforms=$(jq -r '.image.platforms | join(",")' .audiense/custom-image.json)
           tag="${repository}:${BASE_TAG}-${suffix}"
@@ -87,7 +92,7 @@ jobs:
 
           docker buildx build target-custom-image/context \
             --platform "${platforms}" \
-            --build-arg "BASE_TAG=${BASE_TAG}" \
+            --build-arg "BASE_IMAGE=${base}:${BASE_TAG}" \
             --tag "${tag}" \
             --provenance=false \
             $([ "${PUSH}" = 'true' ] && echo --push) \

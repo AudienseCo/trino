@@ -56,6 +56,7 @@ config() { jq -r "$1" "${CONFIG}"; }
 
 [ -n "${BASE_TAG}" ] || BASE_TAG="$(config '.baseTag')"
 UPSTREAM_URL="$(config '.upstreamRemoteUrl')"
+BASE_IMAGE="$(config '.image.baseRepository // "trinodb/trino"'):${BASE_TAG}"
 mapfile -t PLUGINS < <(config '.plugins[]')
 mapfile -t EXTRA_MODULES < <(config '.extraModules[] // empty')
 
@@ -183,7 +184,7 @@ echo "==> Checking for jars the official image ships that this build does not"
 orphans=0
 for plugin in "${PLUGINS[@]}"; do
     name="$(basename "${plugin}")"; name="${name#trino-}"
-    official="$(docker run --rm --entrypoint sh "trinodb/trino:${BASE_TAG}" -c "find /usr/lib/trino/plugin/${name} -maxdepth 1 -type f -printf '%f\\n'")"
+    official="$(docker run --rm --entrypoint sh "${BASE_IMAGE}" -c "find /usr/lib/trino/plugin/${name} -maxdepth 1 -type f -printf '%f\\n'")"
     left_behind="$(comm -23 <(echo "${official}" | sort) <(find "${CONTEXT_DIR}/plugins/${name}" -maxdepth 1 -type f -printf '%f\n' | sort))"
     if [ -n "${left_behind}" ]; then
         echo "    ${name} would keep stale jars:" >&2
@@ -200,4 +201,5 @@ directory is no longer enough; the directory has to be replaced instead." >&2
 
 echo
 echo "Build context ready at ${CONTEXT_DIR}"
+echo "Base image ${BASE_IMAGE}"
 echo "Built from ${BASE_TAG} with $(git -C "${SRC_DIR}" rev-list --count "refs/tags/${BASE_TAG}..HEAD") patch commits"

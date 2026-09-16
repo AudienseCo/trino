@@ -12,7 +12,7 @@
 # this Dockerfile free of RUN instructions: copying files needs no
 # foreign-architecture emulation, so buildx produces every platform without qemu.
 
-ARG BASE_TAG
-FROM trinodb/trino:${BASE_TAG}
+ARG BASE_IMAGE
+FROM ${BASE_IMAGE}
 
 COPY --chown=trino:trino plugins/ /usr/lib/trino/plugin/
