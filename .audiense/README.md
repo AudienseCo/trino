@@ -112,6 +112,13 @@ is a judgement about semantics, not a merge.
 run in full on every image build, so it is restricted there. Cloud profiles are
 never activated, so nothing needs external credentials.
 
+`TestPasswordAuthentication` is excluded. It seeds data over TLS with a client
+that verifies hostnames, against a certificate issued for `localhost` and
+`127.0.0.1`, while the runner reaches containers on the Docker bridge address.
+The connector itself sets `verify-hostnames=false` and is unaffected; only that
+test's own client is. It covers the password and TLS settings, which none of our
+patches touch.
+
 The base image is pulled twice, once by the stale-jar check and once as the
 `FROM` of the image build. Both go through the ECR pull-through cache named in
 `image.baseRepository` rather than Docker Hub, whose unauthenticated pull rate
