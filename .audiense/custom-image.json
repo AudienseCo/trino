@@ -2,7 +2,9 @@
     "baseTag": "483",
     "upstreamRemoteUrl": "https://github.com/trinodb/trino.git",
 
+    "comment_baseRepository": "Where the official release image is pulled from. Docker Hub rate-limits unauthenticated pulls and this build pulls the base image twice, so it goes through the ECR pull-through cache instead.",
     "image": {
+        "baseRepository": "657963864344.dkr.ecr.us-east-1.amazonaws.com/docker-hub/trinodb/trino",
         "repository": "657963864344.dkr.ecr.us-east-1.amazonaws.com/docker-hub/trinodb/trino",
         "tagSuffix": "CUSTOM",
         "platforms": ["linux/amd64", "linux/arm64"]

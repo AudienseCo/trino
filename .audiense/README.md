@@ -112,6 +112,11 @@ is a judgement about semantics, not a merge.
 run in full on every image build, so it is restricted there. Cloud profiles are
 never activated, so nothing needs external credentials.
 
+The base image is pulled twice, once by the stale-jar check and once as the
+`FROM` of the image build. Both go through the ECR pull-through cache named in
+`image.baseRepository` rather than Docker Hub, whose unauthenticated pull rate
+limit this build reaches. Drop that key to pull from Docker Hub directly.
+
 ## Setting up the AWS side
 
 The workflow runs on a GitHub Actions runner hosted by AWS CodeBuild, so AWS
