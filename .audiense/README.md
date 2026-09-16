@@ -30,8 +30,15 @@ The two properties that matter:
 - **Only the connectors are compiled.** At a release tag every module version is
   exact (`483`, not `483-SNAPSHOT`), so every Trino dependency resolves from Maven
   Central. Compiling `trino-opensearch` takes seconds instead of rebuilding the
-  engine. The handful of modules Trino does not publish to Central are listed
-  under `extraModules`.
+  engine.
+
+Trino does not publish every module to Maven Central, and the ones it leaves out
+have to be built. They are listed under `extraModules`, as the union over the
+plugins in the build, and installed before anything else. How many there are
+depends on the connector: OpenSearch needs one, Iceberg pulls eight through its
+test scope. A new release can change the set; the build then stops with
+`Could not find artifact io.trino:<module>:...`, and that module is the one to
+add.
 
 ## Running it
 
