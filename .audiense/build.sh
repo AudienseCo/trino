@@ -199,7 +199,20 @@ directory is no longer enough; the directory has to be replaced instead." >&2
     exit 1
 }
 
+# Name the image after what went into it. The tree hash covers the release and
+# every patch applied on top, so the same inputs always produce the same tag and
+# any change produces a new one. Commit shas would not do: rebasing a patch
+# branch rewrites them without changing a line of the result.
+#
+# The repository holds mirrored upstream tags too and is IMMUTABLE, so a tag that
+# did not move with its contents could not be pushed a second time.
+TAG_SUFFIX="$(config '.image.tagSuffix')"
+PATCHSET="$(git -C "${SRC_DIR}" rev-parse 'HEAD^{tree}' | cut -c1-8)"
+IMAGE_TAG="${BASE_TAG}-${TAG_SUFFIX}-${PATCHSET}"
+echo "${IMAGE_TAG}" > "${BUILD_DIR}/image-tag"
+
 echo
 echo "Build context ready at ${CONTEXT_DIR}"
 echo "Base image ${BASE_IMAGE}"
 echo "Built from ${BASE_TAG} with $(git -C "${SRC_DIR}" rev-list --count "refs/tags/${BASE_TAG}..HEAD") patch commits"
+echo "Image tag ${IMAGE_TAG}"

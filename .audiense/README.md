@@ -52,6 +52,28 @@ Locally:
 .audiense/build.sh -t 482 -x   # another release, skipping tests
 ```
 
+## How an image is named
+
+The tag is `<release>-CUSTOM-<patchset>`, for example `483-CUSTOM-11802191`. The
+suffix is the tree hash of the release with every patch applied, so the same
+inputs always produce the same tag and any change to the patches produces a new
+one. It is not derived from commit shas: rebasing a patch branch rewrites those
+without changing a line of the result.
+
+This is not decoration. The registry also mirrors the upstream releases and is
+`IMMUTABLE`, so a tag that stayed the same while its contents changed could not
+be pushed a second time. A name that follows the contents means a rebuild after
+a patch is merged upstream, or after a port is redone, just lands beside what is
+already there.
+
+The workflow prints the tag in its summary and skips the build when that tag is
+already in the registry, since an existing one means this exact set of patches
+on this release has been built before. `build.sh` writes it to
+`target-custom-image/image-tag`.
+
+Deployments pin the full tag, so `trino_version` in the terraform repository
+changes with every rebuild rather than silently pointing at different contents.
+
 That leaves a ready build context in `target-custom-image/context`:
 
 ```bash

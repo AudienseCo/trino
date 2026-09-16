@@ -80,9 +80,23 @@ jobs:
         run: |
           repository=$(jq -r '.image.repository' .audiense/custom-image.json)
           base=$(jq -r '.image.baseRepository // "trinodb/trino"' .audiense/custom-image.json)
-          suffix=$(jq -r '.image.tagSuffix' .audiense/custom-image.json)
           platforms=$(jq -r '.image.platforms | join(",")' .audiense/custom-image.json)
-          tag="${repository}:${BASE_TAG}-${suffix}"
+          # build.sh names the image after the release and the patches applied.
+          image_tag=$(cat target-custom-image/image-tag)
+          tag="${repository}:${image_tag}"
+
+          # The repository is IMMUTABLE, and it has to be: it also holds the
+          # mirrored upstream releases. An existing tag means this exact set of
+          # patches on this release has already been built, so there is nothing
+          # to push.
+          registry=${repository%%/*}
+          region=$(echo "${registry}" | cut -d. -f4)
+          if aws ecr describe-images --region "${region}" \
+              --repository-name "${repository#*/}" \
+              --image-ids "imageTag=${image_tag}" >/dev/null 2>&1; then
+            echo "${tag} already exists, nothing to build" | tee -a "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
 
           # The Dockerfile only copies files, so every platform builds without
           # foreign-architecture emulation. A container driver is still needed to
@@ -98,8 +112,12 @@ jobs:
             $([ "${PUSH}" = 'true' ] && echo --push) \
             --progress plain
 
-          echo "### \`${tag}\`" >> "$GITHUB_STEP_SUMMARY"
-          echo "" >> "$GITHUB_STEP_SUMMARY"
-          echo "Platforms: \`${platforms}\`" >> "$GITHUB_STEP_SUMMARY"
-          echo "" >> "$GITHUB_STEP_SUMMARY"
-          jq -r '.patches[] | "- #\(.pr) \(.title)"' .audiense/custom-image.json >> "$GITHUB_STEP_SUMMARY"
+          {
+            echo "### \`${tag}\`"
+            echo
+            echo "Set \`trino_version\` to \`${image_tag}\` to deploy this image."
+            echo
+            echo "Platforms: \`${platforms}\`"
+            echo
+            jq -r '.patches[] | "- #\(.pr) \(.title)"' .audiense/custom-image.json
+          } >> "$GITHUB_STEP_SUMMARY"
