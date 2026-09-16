@@ -45,6 +45,13 @@ done
 
 command -v jq >/dev/null || { echo "Please install jq" >&2; exit 1; }
 
+# The cherry-picks below need a committer to write commits with, and CI runners
+# carry no git identity. The author of each commit is preserved from the patch,
+# and these commits never leave target-custom-image/.
+: "${GIT_COMMITTER_NAME:=custom image build}"
+: "${GIT_COMMITTER_EMAIL:=custom-image-build@audiense.com}"
+export GIT_COMMITTER_NAME GIT_COMMITTER_EMAIL
+
 config() { jq -r "$1" "${CONFIG}"; }
 
 [ -n "${BASE_TAG}" ] || BASE_TAG="$(config '.baseTag')"
@@ -91,9 +98,17 @@ for i in $(seq 0 $((patch_count - 1))); do
     [ ${#commits[@]} -gt 0 ] || { echo "PR #${pr}: ${ref} carries no commits over upstream master" >&2; exit 1; }
 
     echo "    #${pr} ${title} (${#commits[@]} commits from ${ref})"
-    if ! git -C "${SRC_DIR}" cherry-pick "${commits[@]}" >/dev/null 2>&1; then
+    if ! cherry_pick_output="$(git -C "${SRC_DIR}" cherry-pick "${commits[@]}" 2>&1)"; then
         conflicts="$(git -C "${SRC_DIR}" diff --name-only --diff-filter=U)"
         git -C "${SRC_DIR}" cherry-pick --abort 2>/dev/null || true
+        if [ -z "${conflicts}" ]; then
+            # Not a conflict: git itself refused. Say so rather than sending the
+            # reader off to resolve a conflict that does not exist.
+            echo >&2
+            echo "PR #${pr} could not be applied to ${BASE_TAG}:" >&2
+            echo "${cherry_pick_output}" | sed 's/^/    /' >&2
+            exit 1
+        fi
         cat >&2 <<EOF
 
 PR #${pr} does not apply cleanly to ${BASE_TAG}. Conflicting files:
