@@ -1,0 +1,100 @@
+name: custom image
+
+# Builds a Trino image from an official release plus the connector patches that
+# are still awaiting review upstream. What goes in is declared in
+# .audiense/custom-image.json; see .audiense/README.md.
+#
+# Runs on a GitHub Actions runner hosted by AWS CodeBuild, so the AWS calls below
+# use the CodeBuild project's service role and need no credentials in the repo.
+
+on:
+  workflow_dispatch:
+    inputs:
+      base_tag:
+        description: 'Trino release tag (blank uses baseTag from custom-image.json)'
+        required: false
+        type: string
+      skip_tests:
+        description: 'Skip the connector test suites'
+        required: false
+        default: false
+        type: boolean
+      push:
+        description: 'Push the image to ECR'
+        required: false
+        default: true
+        type: boolean
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    # https://docs.aws.amazon.com/codebuild/latest/userguide/action-runner.html
+    runs-on: codebuild-${{ vars.CODEBUILD_PROJECT_NAME }}-${{ github.run_id }}-${{ github.run_attempt }}
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          # The patch branches and the release tags both have to be reachable.
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Resolve the release to build on
+        id: release
+        env:
+          INPUT_TAG: ${{ inputs.base_tag }}
+        run: |
+          base_tag="${INPUT_TAG:-$(jq -r '.baseTag' .audiense/custom-image.json)}"
+          echo "base_tag=${base_tag}" >> "$GITHUB_OUTPUT"
+          # Each release pins the JDK it is built with.
+          git fetch --quiet https://github.com/trinodb/trino.git "refs/tags/${base_tag}:refs/tags/${base_tag}"
+          java_version=$(git show "refs/tags/${base_tag}:pom.xml" \
+            | sed -n 's|.*<air\.java\.version>\(.*\)</air\.java\.version>.*|\1|p')
+          echo "java_version=${java_version}" >> "$GITHUB_OUTPUT"
+          echo "Trino ${base_tag} on JDK ${java_version}"
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: 'temurin' # same JDK distribution as the official Trino images
+          java-version: ${{ steps.release.outputs.java_version }}
+
+      - name: Assemble the build context
+        run: .audiense/build.sh -t '${{ steps.release.outputs.base_tag }}' ${{ inputs.skip_tests && '-x' || '' }}
+
+      - name: Log in to ECR
+        run: |
+          registry=$(jq -r '.image.repository' .audiense/custom-image.json | cut -d/ -f1)
+          region=$(echo "${registry}" | cut -d. -f4)
+          aws ecr get-login-password --region "${region}" \
+            | docker login --username AWS --password-stdin "${registry}"
+
+      - name: Build and push the image
+        env:
+          BASE_TAG: ${{ steps.release.outputs.base_tag }}
+          PUSH: ${{ inputs.push }}
+        run: |
+          repository=$(jq -r '.image.repository' .audiense/custom-image.json)
+          suffix=$(jq -r '.image.tagSuffix' .audiense/custom-image.json)
+          platforms=$(jq -r '.image.platforms | join(",")' .audiense/custom-image.json)
+          tag="${repository}:${BASE_TAG}-${suffix}"
+
+          # The Dockerfile only copies files, so every platform builds without
+          # foreign-architecture emulation. A container driver is still needed to
+          # emit a multi-platform manifest.
+          docker buildx create --name trino-custom --driver docker-container --use 2>/dev/null \
+            || docker buildx use trino-custom
+
+          docker buildx build target-custom-image/context \
+            --platform "${platforms}" \
+            --build-arg "BASE_TAG=${BASE_TAG}" \
+            --tag "${tag}" \
+            --provenance=false \
+            $([ "${PUSH}" = 'true' ] && echo --push) \
+            --progress plain
+
+          echo "### \`${tag}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "Platforms: \`${platforms}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          jq -r '.patches[] | "- #\(.pr) \(.title)"' .audiense/custom-image.json >> "$GITHUB_STEP_SUMMARY"

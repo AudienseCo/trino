@@ -1,0 +1,43 @@
+{
+    "baseTag": "483",
+    "upstreamRemoteUrl": "https://github.com/trinodb/trino.git",
+
+    "image": {
+        "repository": "657963864344.dkr.ecr.us-east-1.amazonaws.com/docker-hub/trinodb/trino",
+        "tagSuffix": "CUSTOM",
+        "platforms": ["linux/amd64", "linux/arm64"]
+    },
+
+    "patches": [
+        {
+            "pr": 29209,
+            "title": "Add support for match_only_text field type in OpenSearch",
+            "ref": "origin/pedroluislopez/opensearch-match-only-text"
+        },
+        {
+            "pr": 29216,
+            "title": "Add search table function to OpenSearch connector",
+            "ref": "origin/pedroluislopez/opensearch-search-table-function"
+        },
+        {
+            "pr": 31177,
+            "title": "Add iceberg.domain-compaction-threshold config",
+            "ref": "origin/pedroluislopez/iceberg-domain-compaction-threshold",
+            "comment": "Does not cherry-pick cleanly onto 483: IcebergPageSourceProvider gained a memoryContext parameter after the release. Resolve once onto a port branch and record it below.",
+            "ports": {}
+        }
+    ],
+
+    "plugins": [
+        "plugin/trino-opensearch",
+        "plugin/trino-iceberg"
+    ],
+
+    "extraModules": [
+        "plugin/trino-jmx"
+    ],
+
+    "testArgs": {
+        "plugin/trino-iceberg": ["-Dtest=TestIceberg*", "-DfailIfNoTests=false"]
+    }
+}
