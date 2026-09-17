@@ -29,6 +29,12 @@
             "ports": {
                 "483": "origin/pedroluislopez/iceberg-domain-compaction-threshold-483"
             }
+        },
+        {
+            "pr": 30427,
+            "title": "Fix race between spooling exchange close and memory usage update",
+            "comment": "Already merged upstream, five days after 483 was cut, so the ref is a backport onto the release rather than a branch awaiting review. Fault-tolerant execution fails queries with 'ChildAggregatedMemoryContext is already closed'. Drop this entry once we run a release that carries it.",
+            "ref": "origin/pedroluislopez/spooling-exchange-memory-race-483"
         }
     ],
 
@@ -36,6 +42,9 @@
         "plugin/trino-opensearch",
         "plugin/trino-iceberg"
     ],
+
+    "comment_serverModules": "Engine modules rebuilt and swapped into /usr/lib/trino/lib, one jar for one jar. Unlike a connector this is the server itself, so it is reserved for fixes already merged upstream and only until a release carries them. A patch that changes such a module's dependencies cannot ship this way and the build refuses it.",
+    "serverModules": ["core/trino-main"],
 
     "comment_extraModules": "Modules Trino does not publish to Maven Central that the plugins above need, mostly through their test scope. Union over every plugin in the build; discover additions from the 'Could not find artifact io.trino:...' errors a new release brings.",
     "extraModules": [
@@ -47,13 +56,18 @@
         "lib/trino-hdfs",
         "lib/trino-parquet",
         "lib/trino-geospatial-epsg",
-        "lib/trino-geospatial-epsg-generator"
+        "lib/trino-geospatial-epsg-generator",
+        "core/trino-parser"
     ],
 
     "comment_testArgs": "Extra Maven arguments per plugin. Careful: surefire's -Dtest overrides the includes and excludes in the module pom, so a glob can pull in tests the pom deliberately excludes. trino-iceberg excludes the GCS, Azure, Snowflake, S3Tables and BigLake suites by default, and those need credentials we do not have, so the classes to run are named one by one rather than matched. trino-opensearch declares no excludes, so a negated pattern is safe there. TestPasswordAuthentication seeds data over TLS with a client that verifies hostnames against a certificate issued for localhost and 127.0.0.1; the runner reaches containers on the Docker bridge address instead, so it cannot pass here. It covers the connector's password and TLS settings, which none of our patches touch.",
     "testArgs": {
         "plugin/trino-opensearch": [
             "-Dtest=!TestPasswordAuthentication",
+            "-DfailIfNoTests=false"
+        ],
+        "core/trino-main": [
+            "-Dtest=TestSpoolingExchangeDataSource",
             "-DfailIfNoTests=false"
         ],
         "plugin/trino-iceberg": [
