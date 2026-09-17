@@ -50,12 +50,15 @@
         "lib/trino-geospatial-epsg-generator"
     ],
 
-    "comment_testArgs": "Extra Maven arguments per plugin. TestPasswordAuthentication seeds data over TLS with a client that verifies hostnames against a certificate issued for localhost and 127.0.0.1; the runner reaches containers on the Docker bridge address instead, so it cannot pass here. It covers the connector's password and TLS settings, which none of our patches touch.",
+    "comment_testArgs": "Extra Maven arguments per plugin. Careful: surefire's -Dtest overrides the includes and excludes in the module pom, so a glob can pull in tests the pom deliberately excludes. trino-iceberg excludes the GCS, Azure, Snowflake, S3Tables and BigLake suites by default, and those need credentials we do not have, so the classes to run are named one by one rather than matched. trino-opensearch declares no excludes, so a negated pattern is safe there. TestPasswordAuthentication seeds data over TLS with a client that verifies hostnames against a certificate issued for localhost and 127.0.0.1; the runner reaches containers on the Docker bridge address instead, so it cannot pass here. It covers the connector's password and TLS settings, which none of our patches touch.",
     "testArgs": {
         "plugin/trino-opensearch": [
             "-Dtest=!TestPasswordAuthentication",
             "-DfailIfNoTests=false"
         ],
-        "plugin/trino-iceberg": ["-Dtest=TestIceberg*", "-DfailIfNoTests=false"]
+        "plugin/trino-iceberg": [
+            "-Dtest=TestIcebergConfig,TestIcebergPageSourceProvider,TestIcebergOrcWithBloomFilters,TestIcebergParquetWithBloomFilters",
+            "-DfailIfNoTests=false"
+        ]
     }
 }
