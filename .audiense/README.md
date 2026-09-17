@@ -134,6 +134,12 @@ is a judgement about semantics, not a merge.
 run in full on every image build, so it is restricted there. Cloud profiles are
 never activated, so nothing needs external credentials.
 
+A word of warning about `testArgs`: surefire's `-Dtest` overrides the includes
+and excludes declared in the module pom. `trino-iceberg` excludes its GCS, Azure,
+Snowflake, S3Tables and BigLake suites by default, and a glob like
+`-Dtest=TestIceberg*` brings all of them back, where they sit waiting on
+credentials we do not have. Name the classes to run instead of matching them.
+
 `TestPasswordAuthentication` is excluded. It seeds data over TLS with a client
 that verifies hostnames, against a certificate issued for `localhost` and
 `127.0.0.1`, while the runner reaches containers on the Docker bridge address.
