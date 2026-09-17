@@ -1,9 +1,10 @@
 # Custom Trino images
 
-We run connector patches in production before they are merged upstream. This
-directory builds an image for that: an **official Trino release** with the
-connectors we have touched rebuilt from that same release tag, with our pending
-pull requests applied on top.
+We run Trino patches in production before a release carries them. This directory
+builds an image for that: an **official Trino release** with the modules we have
+touched rebuilt from that same release tag, with our patches applied on top —
+pull requests still under review upstream, and changes already merged there that
+no release ships yet.
 
 Almost everything here is a connector: plugin directories replaced over the
 official image, which is why that image can be used as-is underneath. An engine
@@ -99,8 +100,12 @@ under `target-custom-image/src`.
 }
 ```
 
-- **A PR is merged upstream** → delete its entry. Once it ships in a release, the
-  official image already has it.
+- **A PR is merged upstream** → nothing to do yet. Keep the entry until a release
+  we actually run carries the change; only then does the official image already
+  have it. Deleting on merge silently drops the change from the next image, and
+  when the patch adds a config property that a cluster sets, the coordinator will
+  not start at all. #30427 is merged upstream and still carried here for exactly
+  this reason.
 - **A PR gets new commits** → nothing to do. Only the ref is recorded, so the
   build always takes whatever the branch currently holds.
 - **A new connector is touched** → add the module to `plugins`.
