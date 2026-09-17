@@ -59,6 +59,7 @@ UPSTREAM_URL="$(config '.upstreamRemoteUrl')"
 BASE_IMAGE="$(config '.image.baseRepository // "trinodb/trino"'):${BASE_TAG}"
 mapfile -t PLUGINS < <(config '.plugins[]')
 mapfile -t EXTRA_MODULES < <(config '.extraModules[] // empty')
+mapfile -t SERVER_MODULES < <(config '.serverModules[]? // empty')
 
 echo "==> Building on Trino ${BASE_TAG}"
 
@@ -134,7 +135,34 @@ EOF
     fi
 done
 
-MODULES="$(IFS=,; echo "${PLUGINS[*]}")"
+# A server jar is swapped one file for one file, so a patch that changes an
+# engine module's dependencies cannot be shipped this way: the new jar would need
+# siblings in /usr/lib/trino/lib that this build does not produce. The plugin
+# check further down cannot catch it either, since that compares the contents of
+# a plugin directory and lib/ is never listed as a whole. What governs those
+# dependencies is the module's own pom and the root pom's dependencyManagement,
+# so refuse when a patch touches either.
+if [ ${#SERVER_MODULES[@]} -gt 0 ]; then
+    guarded_poms=("pom.xml")
+    for module in "${SERVER_MODULES[@]}"; do
+        guarded_poms+=("${module}/pom.xml")
+    done
+    touched_poms="$(git -C "${SRC_DIR}" diff --name-only "refs/tags/${BASE_TAG}..HEAD" -- "${guarded_poms[@]}")"
+    if [ -n "${touched_poms}" ]; then
+        cat >&2 <<EOF
+
+A patch changes a pom that governs the dependencies of ${SERVER_MODULES[*]}:
+$(echo "${touched_poms}" | sed 's/^/    /')
+
+Replacing a single jar under /usr/lib/trino/lib cannot carry that. The image
+needs a full server build instead; see .audiense/README.md.
+EOF
+        exit 1
+    fi
+fi
+
+BUILD_MODULES=("${PLUGINS[@]}" ${SERVER_MODULES[@]+"${SERVER_MODULES[@]}"})
+MODULES="$(IFS=,; echo "${BUILD_MODULES[*]}")"
 
 # No -am anywhere below: at a release tag every module version is exact, so
 # everything the connectors depend on resolves from Maven Central. Only the few
@@ -147,11 +175,11 @@ if [ ${#EXTRA_MODULES[@]} -gt 0 ]; then
 fi
 
 if [ "${RUN_TESTS}" = true ]; then
-    for plugin in "${PLUGINS[@]}"; do
+    for module in "${PLUGINS[@]}" ${SERVER_MODULES[@]+"${SERVER_MODULES[@]}"}; do
         extra_args=()
-        mapfile -t extra_args < <(config ".testArgs.\"${plugin}\"[]? // empty")
-        echo "==> Testing ${plugin} ${extra_args[*]-}"
-        (cd "${SRC_DIR}" && MAVEN_OPTS="-Xmx3G" ./mvnw test -pl "${plugin}" \
+        mapfile -t extra_args < <(config ".testArgs.\"${module}\"[]? // empty")
+        echo "==> Testing ${module} ${extra_args[*]-}"
+        (cd "${SRC_DIR}" && MAVEN_OPTS="-Xmx3G" ./mvnw test -pl "${module}" \
             -Dair.check.skip-all=true ${extra_args[@]+"${extra_args[@]}"})
     done
 fi
@@ -160,7 +188,7 @@ echo "==> Packaging ${MODULES}"
 (cd "${SRC_DIR}" && MAVEN_OPTS="-Xmx3G" ./mvnw package -pl "${MODULES}" -DskipTests -Dair.check.skip-all=true)
 
 echo "==> Assembling the build context"
-mkdir -p "${CONTEXT_DIR}/plugins"
+mkdir -p "${CONTEXT_DIR}/plugins" "${CONTEXT_DIR}/lib"
 cp "${SCRIPT_DIR}/Dockerfile" "${CONTEXT_DIR}/Dockerfile"
 for plugin in "${PLUGINS[@]}"; do
     artifact="$(basename "${plugin}")"
@@ -170,6 +198,29 @@ for plugin in "${PLUGINS[@]}"; do
     [ -d "${built}" ] || { echo "Expected ${built} to exist" >&2; exit 1; }
     cp -R "${built}" "${CONTEXT_DIR}/plugins/${name}"
     echo "    ${name}: $(ls "${CONTEXT_DIR}/plugins/${name}" | wc -l | tr -d ' ') jars"
+done
+
+# An engine module ships as a single jar under /usr/lib/trino/lib, so it is
+# replaced in place rather than merged: same file name, same contents everywhere
+# else. provisio names that file after the groupId as well as the artifact, so
+# the name is looked up in the release instead of being assembled here. Finding
+# exactly one match is also what proves this jar replaces a file of the release
+# rather than adding one beside it.
+for module in ${SERVER_MODULES[@]+"${SERVER_MODULES[@]}"}; do
+    artifact="$(basename "${module}")"
+    built="${SRC_DIR}/${module}/target/${artifact}-${BASE_TAG}.jar"
+    [ -f "${built}" ] || { echo "Expected ${built} to exist" >&2; exit 1; }
+
+    mapfile -t shipped < <(docker run --rm --entrypoint sh "${BASE_IMAGE}" \
+        -c "find /usr/lib/trino/lib -maxdepth 1 -name '*_${artifact}-${BASE_TAG}.jar' -printf '%f\\n'")
+    if [ "${#shipped[@]}" -ne 1 ]; then
+        echo "Expected exactly one /usr/lib/trino/lib/*_${artifact}-${BASE_TAG}.jar in ${BASE_IMAGE}, found ${#shipped[@]}" >&2
+        printf '    %s\n' ${shipped[@]+"${shipped[@]}"} >&2
+        exit 1
+    fi
+
+    cp "${built}" "${CONTEXT_DIR}/lib/${shipped[0]}"
+    echo "    ${shipped[0]}"
 done
 
 # COPY merges, so a jar the official image ships and we no longer produce would

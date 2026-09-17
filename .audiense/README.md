@@ -5,8 +5,10 @@ directory builds an image for that: an **official Trino release** with the
 connectors we have touched rebuilt from that same release tag, with our pending
 pull requests applied on top.
 
-Nothing here changes the Trino engine. Only connector plugin directories are
-replaced, which is why the official image can be used as-is underneath.
+Almost everything here is a connector: plugin directories replaced over the
+official image, which is why that image can be used as-is underneath. An engine
+jar can be replaced too, under the narrow conditions in
+[Engine fixes](#engine-fixes).
 
 ## How it works
 
@@ -18,8 +20,9 @@ replaced, which is why the official image can be used as-is underneath.
 
 1. A throwaway git worktree is created at the release tag.
 2. Every PR listed in `custom-image.json` is cherry-picked onto it.
-3. The touched connectors are tested and packaged.
-4. The resulting plugin directories are copied over the official image.
+3. The touched modules are tested and packaged.
+4. The resulting plugin directories, and any rebuilt engine jar, are copied over
+   the official image.
 
 The two properties that matter:
 
@@ -128,6 +131,37 @@ the branch. Ports for releases we no longer build can be deleted.
 This is the one step that stays manual, and deliberately so: resolving a conflict
 is a judgement about semantics, not a merge.
 
+### Engine fixes
+
+`serverModules` rebuilds a module that ships as a single jar under
+`/usr/lib/trino/lib` and swaps that one file. `core/trino-main` is there for
+[#30427](https://github.com/trinodb/trino/pull/30427), which fixes a race that
+fails fault-tolerant queries with `ChildAggregatedMemoryContext is already
+closed`. It was merged five days after 483 was cut, so there is no release to
+move to.
+
+This is the engine, not a connector, so it is held to stricter rules than
+`plugins`:
+
+- **Only fixes already merged upstream**, referenced by a branch that backports
+  the merged commit onto the release. Nothing that is still under review.
+- **Only until a release carries the fix.** Then the entry goes, like any other.
+- **No dependency changes.** A jar is swapped one file for one file; a new
+  dependency would need a sibling jar in `lib/` that this build does not produce.
+  There is no equivalent of the stale-jar check here, because `lib/` is never
+  listed as a whole, so the build instead refuses any patch that touches the
+  module's pom or the root pom's `dependencyManagement`.
+
+The file name in the image carries the groupId as well as the artifact
+(`io.trino_trino-main-483.jar`). The build looks it up in the release rather than
+assembling it, and requires exactly one match, which is what proves the jar
+replaces a file of the release instead of landing beside it.
+
+Note what is *not* verified: `testArgs` runs the test that comes with the fix,
+not the `trino-main` suite, which is far too large for an image build. The
+confidence that the rest of the jar is sound comes from it being the release tag
+plus one reviewed upstream commit, and from upstream CI on that commit.
+
 ### Tests
 
 `testArgs` narrows what runs per module. The Iceberg suite is far too large to
@@ -172,6 +206,10 @@ project without qemu, so one project serves both platforms.
 
 ## What this does not cover
 
-Changes outside a connector — the engine, the SPI, the client — cannot be shipped
-by replacing a plugin directory. Those need a full server build; Trino's own
-`core/docker/build.sh` does that from a release tarball.
+The SPI, the client, the launcher and anything that changes a module's
+dependencies. Replacing a plugin directory or a single jar cannot carry those;
+they need a full server build, which Trino's own `core/docker/build.sh` does from
+a release tarball.
+
+Engine modules are the narrow exception described in
+[Engine fixes](#engine-fixes), and only under the conditions listed there.
